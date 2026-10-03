@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Construction Cody — submittal requirements MVP
 
-## Getting Started
+Next.js 15.5.27 / React 19.1.9 remain the base. This selectively ports the older `Sam-BeeGee/constructioncody` submittal workflow: source input → server analysis → reviewable requirement cards. It replaces the starter homepage and is also available at `/submittals`.
 
-First, run the development server:
+The old upgrade gate, fake timed Generate action, inactive PDF/save/download controls, product suggestions and fabricated parsing fallback are excluded. This MVP extracts **requirements**, not approved products or completed submittal packages.
 
-```bash
+## Run locally
+
+```sh
+npm ci
+cp .env.example .env.local
+# Set GOOGLE_API_KEY and GEMINI_MODEL in .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Choose a currently available Gemini model supporting `generateContent` structured output with `generationConfig.responseFormat.text.schema`. No model is silently chosen or substituted. Secrets are server-side only; never use `NEXT_PUBLIC_` for the key.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Paste one spec excerpt (maximum 20,000 characters), give it a meaningful source/section/revision name, or import a UTF-8 `.txt` file. PDF extraction/OCR is intentionally deferred; paste the relevant extracted PDF text. The excerpt is sent to Google Gemini. The application has no database, source logging, draft persistence or browser storage; browser state is lost on refresh. Provider data handling is separate from application storage.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Trust boundary
 
-## Learn More
+- One strict Zod schema defines model requirements and produces the provider JSON Schema. Responses are parsed as JSON and validated at runtime; markdown repair and demo fallback are not allowed.
+- Every requirement consists of full source lines copied verbatim plus a tentative AI document-type classification. No generated product, manufacturer, model or compliance assertions exist in the output schema.
+- The server checks quote text and both line endpoints against the original excerpt (only CRLF/CR line endings are normalized). Invalid evidence, extra fields, duplicate evidence or any invalid item rejects the entire result.
+- Source-line verification proves where a quote came from, **not** that the model interpreted it correctly or found every requirement. Human review must check conditional language, section context, referenced documents, drawings and addenda. Classification is also unverified.
+- All returned items remain `needs_review`. No automatic approval status exists. Empty results mean no explicit requirements were identified in that excerpt, not that the project needs no submittals or is compliant.
+- Source links show the immutable analyzed text and excerpt line numbers, not guessed PDF pages. JSON export includes the full analyzed text, source name, SHA-256, model, timestamp, quotes, citations and limitations. Download is a real local file operation, not package generation.
+- HTTP errors explicitly cover invalid requests, missing configuration, provider rejection/rate limit/network failure, block, timeout, incomplete generation, invalid output and unverifiable evidence. No raw provider diagnostics or secrets are sent to the client.
+- Input is bounded at 100,000 actual request bytes and 20,000 spec characters; provider calls have a 30-second deadline. Responses are not cached.
 
-To learn more about Next.js, take a look at the following resources:
+This is a private evaluation slice. The analysis endpoint has no application authentication, rate limiting or database. Keep the deployment behind hosting access protection while evaluating; add user authentication and shared quota enforcement before public access with a billable key. This PR does not change hosting configuration or secrets.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Validation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```sh
+npm test
+npm run typecheck
+npm run lint
+npm run build
+```
 
-## Deploy on Vercel
+Tests use a mocked provider; they exercise schema/evidence rejection, negation-preserving quotes, real route response codes, empty output, truncation, malformed JSON, configuration and provider failures. They do not establish model accuracy on real project specifications. A live smoke test with the deployment's configured key/model is still needed.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Files
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| File | Responsibility |
+| --- | --- |
+| `src/app/page.tsx` | Replace starter with requirements workspace |
+| `src/app/submittals/page.tsx` | Same workspace at the original workflow URL |
+| `src/components/submittal-workspace.tsx` | Text import, request/error states, source review and JSON download |
+| `src/app/api/submittals/analyze/route.ts` | Bounded request validation, server configuration and HTTP failures |
+| `src/lib/submittals/schema.ts` | Strict request, model output and response contracts |
+| `src/lib/submittals/analyze.ts` | Structured Gemini call and deterministic evidence validation |
+| `src/app/globals.css`, `src/app/layout.tsx` | Workspace styling and site metadata |
+| `package.json`, `package-lock.json` | Zod, test runner and validation commands |
+| `.env.example`, `.gitignore` | Document required configuration without committing secrets |
+| `tests/submittals.test.ts` | Trust-boundary and route regression tests |
+| `.github/workflows/checks.yml` | PR lint/typecheck/test/build checks |
+| `README.md` | Scope, setup, trust limits and next deployment check |
+
+Next slice: validate extraction on a small authorized set of real specs; then add PDF extraction with page provenance. Product selection requires separate supplier/manufacturer evidence and a reviewer-controlled compliance matrix.
+
+Provider format reference: https://ai.google.dev/gemini-api/docs/generate-content/structured-output
+Zod JSON Schema reference: https://zod.dev/json-schema
